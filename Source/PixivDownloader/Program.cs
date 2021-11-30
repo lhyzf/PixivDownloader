@@ -177,8 +177,13 @@ namespace PixivDownloader
                 }
                 return (illust, true);
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                Console.WriteLine();
+                Console.WriteLine(ex);
+                Console.WriteLine();
+                Console.WriteLine("Press any key to retry...");
+                Console.ReadKey();
                 return (illust, false);
             }
             finally
@@ -199,7 +204,8 @@ namespace PixivDownloader
                     .Replace('"', '_')
                     .Replace('<', '_')
                     .Replace('>', '_')
-                    .Replace('|', '_');
+                    .Replace('|', '_')
+                    .Replace("\n", "");
             }
         }
 
