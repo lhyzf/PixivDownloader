@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Net;
 using System.Runtime.Versioning;
 using System.Threading;
 using System.Threading.Tasks;
@@ -13,7 +14,8 @@ namespace PixivDownloader
     class Program
     {
         private static readonly PixivClient _client = new();
-        private static readonly PixivApiClient _apiClient = new(true);
+        private static PixivApiClient _apiClient = new(true);
+        private static IWebProxy _webProxy;
         private static string _directory;
         private static int _lastPid;
         private static int _downloadThread = 8;
@@ -30,6 +32,12 @@ namespace PixivDownloader
                 Console.WriteLine("Writing auth url...");
                 WriteTempFile(args[0]);
                 return;
+            }
+            SetProxy();
+            if (_webProxy != null)
+            {
+                _client.SetProxy(_webProxy);
+                _apiClient = new PixivApiClient(_webProxy);
             }
             await Auth();
 
@@ -302,6 +310,29 @@ Please select auth method:
                         break;
                 }
             }
+        }
+        #endregion
+
+        #region Proxy
+        private const string ProxyFile = "pd_proxy";
+
+        private static void SetProxy()
+        {
+            string proxyAddress;
+            if (File.Exists(ProxyFile))
+            {
+                proxyAddress = File.ReadAllText(ProxyFile);
+                if (!string.IsNullOrWhiteSpace(proxyAddress))
+                {
+                    _webProxy = new WebProxy(proxyAddress);
+                    Console.WriteLine($"Current proxy: {proxyAddress}");
+                }
+                return;
+            }
+            Console.WriteLine("Please set proxy or empty to use system proxy:");
+            proxyAddress = Console.ReadLine();
+            File.WriteAllText(ProxyFile, proxyAddress);
+            SetProxy();
         }
         #endregion
 
