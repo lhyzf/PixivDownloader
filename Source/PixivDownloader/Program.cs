@@ -39,16 +39,24 @@ namespace PixivDownloader
                 _client.SetProxy(_webProxy);
                 _apiClient = new PixivApiClient(_webProxy);
             }
-            await Auth();
 
-            SetTargetDirectory();
-
-            while (true)
+            try
             {
-                WriteOneColorLine($"Running time: {DateTimeOffset.Now}", ConsoleColor.Green);
-                await SimpleDownloadFollowingIllusts();
-                WriteOneColorLine($"Waiting for next run: {DateTimeOffset.Now.AddHours(1)}", ConsoleColor.Green);
-                await Task.Delay(TimeSpan.FromHours(1));
+                await Auth();
+
+                SetTargetDirectory();
+
+                while (true)
+                {
+                    WriteOneColorLine($"Running time: {DateTimeOffset.Now}", ConsoleColor.Green);
+                    await SimpleDownloadFollowingIllusts();
+                    WriteOneColorLine($"Waiting for next run: {DateTimeOffset.Now.AddHours(1)}", ConsoleColor.Green);
+                    await Task.Delay(TimeSpan.FromHours(1));
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine(ex);
             }
 
             Console.WriteLine("End.");
@@ -146,74 +154,55 @@ namespace PixivDownloader
 
         private static async Task<(Illust Illust, bool IsSuccess)> SingleDownloadAsync(Illust illust)
         {
-            try
+            await _downloadSemaphore.WaitAsync();
+            if (illust.IsAnimated)
             {
-                await _downloadSemaphore.WaitAsync();
-                if (illust.IsAnimated)
+                var filename = Path.Combine(_directory, illust.Id + ".zip");
+                if (File.Exists(filename))
                 {
-                    var filename = Path.Combine(_directory, illust.Id + ".zip");
+                    return (illust, true);
+                }
+                var tempFilename = filename + ".temp";
+                var animatedDetail = await illust.GetAnimatedDetailAsync();
+                var zipResponse = await animatedDetail.GetZipAsync();
+                using (var file = File.OpenWrite(tempFilename))
+                {
+                    await zipResponse.Content.CopyToAsync(file);
+                }
+                File.Move(tempFilename, filename);
+            }
+            else
+            {
+                foreach (var page in illust.Pages)
+                {
+                    var filename = Path.Combine(_directory, GetFilename(page));
                     if (File.Exists(filename))
                     {
                         return (illust, true);
                     }
                     var tempFilename = filename + ".temp";
-                    var animatedDetail = await illust.GetAnimatedDetailAsync();
-                    var zipResponse = await animatedDetail.GetZipAsync();
+                    var response = await _apiClient.GetImageAsync(page.Original.Uri);
                     using (var file = File.OpenWrite(tempFilename))
                     {
-                        await zipResponse.Content.CopyToAsync(file);
+                        await response.Content.CopyToAsync(file);
                     }
                     File.Move(tempFilename, filename);
                 }
-                else
-                {
-                    foreach (var page in illust.Pages)
-                    {
-                        var filename = Path.Combine(_directory, GetFilename(page));
-                        if (File.Exists(filename))
-                        {
-                            return (illust, true);
-                        }
-                        var tempFilename = filename + ".temp";
-                        var response = await _apiClient.GetImageAsync(page.Original.Uri);
-                        using (var file = File.OpenWrite(tempFilename))
-                        {
-                            await response.Content.CopyToAsync(file);
-                        }
-                        File.Move(tempFilename, filename);
-                    }
-                }
-                return (illust, true);
             }
-            catch (Exception ex)
-            {
-                Console.WriteLine();
-                Console.WriteLine(ex);
-                Console.WriteLine();
-                Console.WriteLine("Press any key to retry...");
-                Console.ReadKey();
-                return (illust, false);
-            }
-            finally
-            {
-                _downloadSemaphore.Release();
-            }
+            _downloadSemaphore.Release();
+            return (illust, true);
 
 
 
             string GetFilename(IllustPage illustPage)
             {
-                return $"{Path.GetFileNameWithoutExtension(illustPage.Original.Uri.OriginalString)}_{illustPage.Illust.Title}{Path.GetExtension(illustPage.Original.Uri.OriginalString)}"
-                    .Replace('\\', '_')
-                    .Replace('/', '_')
-                    .Replace(':', '_')
-                    .Replace('*', '_')
-                    .Replace('?', '_')
-                    .Replace('"', '_')
-                    .Replace('<', '_')
-                    .Replace('>', '_')
-                    .Replace('|', '_')
-                    .Replace("\n", "");
+                Path.GetInvalidFileNameChars();
+                var filename = $"{Path.GetFileNameWithoutExtension(illustPage.Original.Uri.OriginalString)}_{illustPage.Illust.Title}{Path.GetExtension(illustPage.Original.Uri.OriginalString)}";
+                foreach (var item in Path.GetInvalidFileNameChars())
+                {
+                    filename = filename.Replace(item, '_');
+                }
+                return filename;
             }
         }
 
@@ -371,7 +360,7 @@ Please select auth method:
                 string applicationLocation = typeof(Program).Assembly.Location;
                 if (applicationLocation.EndsWith(".dll", StringComparison.InvariantCultureIgnoreCase))
                 {
-                    applicationLocation = applicationLocation.Substring(0, applicationLocation.Length - 4) + ".exe";
+                    applicationLocation = Path.ChangeExtension(applicationLocation, "exe");
                     if (!File.Exists(applicationLocation))
                     {
                         throw new InvalidOperationException();
