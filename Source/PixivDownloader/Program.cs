@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Net;
@@ -357,14 +358,20 @@ Please select auth method:
             {
                 // Replace typeof(App) by the class that contains the Main method or any class located in the project that produces the exe.
                 // or replace typeof(App).Assembly.Location by anything that gives the full path to the exe
+                // https://docs.microsoft.com/en-us/dotnet/api/system.reflection.assembly.location?view=net-6.0
+                // In .NET 5 and later versions, for bundled assemblies, the value returned is an empty string.
                 string applicationLocation = typeof(Program).Assembly.Location;
                 if (applicationLocation.EndsWith(".dll", StringComparison.InvariantCultureIgnoreCase))
                 {
                     applicationLocation = Path.ChangeExtension(applicationLocation, "exe");
-                    if (!File.Exists(applicationLocation))
-                    {
-                        throw new InvalidOperationException();
-                    }
+                }
+                else if (string.IsNullOrEmpty(applicationLocation))
+                {
+                    applicationLocation = Process.GetCurrentProcess().MainModule.FileName;
+                }
+                if (!File.Exists(applicationLocation))
+                {
+                    throw new InvalidOperationException();
                 }
                 key.SetValue("", "URL:" + UriScheme);
                 key.SetValue("URL Protocol", "");
