@@ -156,42 +156,48 @@ namespace PixivDownloader
         private static async Task<(Illust Illust, bool IsSuccess)> SingleDownloadAsync(Illust illust)
         {
             await _downloadSemaphore.WaitAsync();
-            if (illust.IsAnimated)
+            try
             {
-                var filename = Path.Combine(_directory, illust.Id + ".zip");
-                if (File.Exists(filename))
+                if (illust.IsAnimated)
                 {
-                    return (illust, true);
-                }
-                var tempFilename = filename + ".temp";
-                var animatedDetail = await illust.GetAnimatedDetailAsync();
-                var zipResponse = await animatedDetail.GetZipAsync();
-                using (var file = File.OpenWrite(tempFilename))
-                {
-                    await zipResponse.Content.CopyToAsync(file);
-                }
-                File.Move(tempFilename, filename);
-            }
-            else
-            {
-                foreach (var page in illust.Pages)
-                {
-                    var filename = Path.Combine(_directory, GetFilename(page));
+                    var filename = Path.Combine(_directory, illust.Id + ".zip");
                     if (File.Exists(filename))
                     {
                         return (illust, true);
                     }
                     var tempFilename = filename + ".temp";
-                    var response = await _apiClient.GetImageAsync(page.Original.Uri);
+                    var animatedDetail = await illust.GetAnimatedDetailAsync();
+                    var zipResponse = await animatedDetail.GetZipAsync();
                     using (var file = File.OpenWrite(tempFilename))
                     {
-                        await response.Content.CopyToAsync(file);
+                        await zipResponse.Content.CopyToAsync(file);
                     }
                     File.Move(tempFilename, filename);
                 }
+                else
+                {
+                    foreach (var page in illust.Pages)
+                    {
+                        var filename = Path.Combine(_directory, GetFilename(page));
+                        if (File.Exists(filename))
+                        {
+                            continue;
+                        }
+                        var tempFilename = filename + ".temp";
+                        var response = await _apiClient.GetImageAsync(page.Original.Uri);
+                        using (var file = File.Open(tempFilename, FileMode.Create))
+                        {
+                            await response.Content.CopyToAsync(file);
+                        }
+                        File.Move(tempFilename, filename);
+                    }
+                }
+                return (illust, true);
             }
-            _downloadSemaphore.Release();
-            return (illust, true);
+            finally
+            {
+                _downloadSemaphore.Release();
+            }
 
 
 
